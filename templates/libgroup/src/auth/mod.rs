@@ -1,16 +1,24 @@
 use aidoku::{
 	AidokuError, Result,
-	alloc::String,
+	alloc::{String, string::ToString},
 	imports::{
-		defaults::{DefaultValue, defaults_get_json, defaults_set},
+		defaults::{DefaultValue, defaults_get, defaults_get_json, defaults_set},
 		net::{Request, Response},
 	},
 	prelude::*,
 };
 
-use crate::{models::responses::TokenResponse, settings::get_api_url};
+use crate::{
+	context::Context,
+	endpoints::Url,
+	models::responses::{TokenResponse, UserResponse},
+	settings::get_api_url,
+};
 
 const TOKEN_KEY: &str = "login";
+const USER_ID_KEY: &str = "user_id";
+
+pub const USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
 
 const REFRESH_PATH: &str = "/api/auth/oauth/token";
 const CLIENT_ID: &str = "3";
@@ -23,11 +31,17 @@ const CONTENT_TYPE_FORM: &str = "application/x-www-form-urlencoded";
 const AUTH_SCHEME: &str = "Bearer";
 
 pub trait AuthRequest {
-	fn authed(self) -> Result<Response>;
+	fn authed(self, ctx: &Context) -> Result<Response>;
 }
 
 impl AuthRequest for Request {
-	fn authed(mut self) -> Result<Response> {
+	fn authed(mut self, ctx: &Context) -> Result<Response> {
+		self = self
+			.header("Origin", &ctx.base_url)
+			.header("Referer", &ctx.api_url)
+			.header("Site-Id", &ctx.site_id.to_string())
+			.header("User-Agent", USER_AGENT);
+
 		if let Ok(token) = get_token()
 			&& let Some(access_token) = token.access_token
 		{
@@ -44,6 +58,10 @@ impl AuthRequest for Request {
 		{
 			return Ok(response
 				.into_request()
+				.header("Origin", &ctx.base_url)
+				.header("Referer", &ctx.api_url)
+				.header("Site-Id", &ctx.site_id.to_string())
+				.header("User-Agent", USER_AGENT)
 				.header(HEADER_AUTH, &format!("{AUTH_SCHEME} {access_token}"))
 				.send()?);
 		}
@@ -58,9 +76,38 @@ fn get_token() -> Result<TokenResponse> {
 		.map_err(|_| AidokuError::Message("No token".into()))
 }
 
+/// Retrieves the stored user ID from defaults.
+/// If no user ID is stored but we have a valid token, fetches and stores it automatically.
+pub fn get_user_id(ctx: &Context) -> Option<i32> {
+	if let Some(id) = defaults_get::<i32>(USER_ID_KEY).filter(|&id| id != 0) {
+		return Some(id);
+	}
+
+	if get_token().is_ok() && fetch_and_store_user_id(ctx).is_ok() {
+		defaults_get::<i32>(USER_ID_KEY).filter(|&id| id != 0)
+	} else {
+		None
+	}
+}
+
+/// Clears the stored user ID (called when token changes)
+pub fn clear_user_id() {
+	defaults_set(USER_ID_KEY, DefaultValue::Null);
+}
+
 /// Stores the authentication token JSON string into defaults.
 fn set_token(token_json: String) {
 	defaults_set(TOKEN_KEY, DefaultValue::String(token_json));
+}
+
+/// Fetches user ID from API and stores it.
+fn fetch_and_store_user_id(ctx: &Context) -> Result<()> {
+	let user_response = Request::get(Url::auth_me(&get_api_url()))?
+		.authed(ctx)?
+		.get_json::<UserResponse>()?;
+
+	defaults_set(USER_ID_KEY, DefaultValue::Int(user_response.data.id));
+	Ok(())
 }
 
 /// Attempts to refresh the authentication token using the stored refresh token.

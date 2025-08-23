@@ -7,11 +7,11 @@
 				"type": "text",
 				"key": "baseUrl",
 				"title": "Веб домен",
-				"placeholder": "https://mangalib.me",
+				"placeholder": "https://v2.shlib.life",
 				"keyboardType": 3,
 				"returnKeyType": 9,
 				"autocorrectionDisabled": true,
-				"default": "https://mangalib.me",
+				"default": "https://v2.shlib.life",
 				"refreshes": ["listings", "content"]
 			},
 			{
@@ -21,18 +21,16 @@
 				"values": [
 					"https://api.imglib.info",
 					"https://api.lib.social",
-					"https://api.mangalib.me",
-					"https://api2.mangalib.me",
+					"https://hapi.hentaicdn.org",
 					"https://api.cdnlibs.org"
 				],
 				"titles": [
 					"Официальное приложение (api.imglib.info)",
 					"Основной (api.lib.social)",
-					"Резервный (api.mangalib.me)",
-					"Резервный 2 (api2.mangalib.me)",
-					"Резервный 3 (api.cdnlibs.org)"
+					"Резервный (hapi.hentaicdn.org)",
+					"Резервный 2 (api.cdnlibs.org)"
 				],
-				"default": "https://api.imglib.info",
+				"default": "https://hapi.hentaicdn.org",
 				"refreshes": ["listings", "content"]
 			},
 			{

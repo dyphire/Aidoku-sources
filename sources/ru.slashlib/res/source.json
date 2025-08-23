@@ -1,10 +1,10 @@
 {
 	"info": {
-		"id": "ru.mangalib",
-		"name": "MangaLib",
-		"version": 6,
-		"url": "https://mangalib.me",
-		"contentRating": 1,
+		"id": "ru.slashlib",
+		"name": "SlashLib",
+		"version": 1,
+		"url": "https://slashlib.me",
+		"contentRating": 2,
 		"minAppVersion": "0.7.1",
 		"languages": [
 			"ru"
@@ -23,8 +23,5 @@
 			"id": "latest",
 			"name": "Последние обновления"
 		}
-	],
-	"config": {
-		"breakingChangeVersion": 5
-	}
+	]
 }

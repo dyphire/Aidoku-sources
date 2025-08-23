@@ -6,7 +6,10 @@ use aidoku::{
 use chrono::DateTime;
 use serde::{Deserialize, Deserializer};
 
-use crate::{cdn::get_selected_image_server_url, endpoints::Url, models::common::Moderated};
+use crate::{
+	cdn::get_selected_image_server_url, context::Context, endpoints::Url,
+	models::common::LibGroupModerated,
+};
 
 use super::common::{LibGroupRestrictedView, LibGroupTeam};
 
@@ -19,7 +22,7 @@ pub struct LibGroupChapterBranch {
 	pub teams: Vec<LibGroupTeam>,
 	pub user: ChapterBranchUser,
 	pub restricted_view: Option<LibGroupRestrictedView>,
-	pub moderation: Option<Moderated>,
+	pub moderation: Option<LibGroupModerated>,
 }
 
 #[derive(Default, Deserialize, Debug, Clone)]
@@ -74,7 +77,12 @@ pub struct LibGroupChapter {
 }
 
 impl LibGroupChapterListItem {
-	pub fn into_chapters(self, base_url: &str, slug_url: &str) -> Vec<Chapter> {
+	pub fn into_chapters(
+		self,
+		base_url: &str,
+		slug_url: &str,
+		user_id: &Option<i32>,
+	) -> Vec<Chapter> {
 		self.branches
 			.into_iter()
 			.map(|branch| {
@@ -113,6 +121,7 @@ impl LibGroupChapterListItem {
 						volume_number,
 						chapter_number,
 						branch.branch_id,
+						user_id,
 					)),
 					locked,
 					..Default::default()
@@ -121,23 +130,28 @@ impl LibGroupChapterListItem {
 			.collect()
 	}
 
-	pub fn flatten_chapters(items: Vec<Self>, base_url: &str, slug_url: &str) -> Vec<Chapter> {
+	pub fn flatten_chapters(
+		items: Vec<Self>,
+		base_url: &str,
+		slug_url: &str,
+		user_id: &Option<i32>,
+	) -> Vec<Chapter> {
 		items
 			.into_iter()
 			.rev()
-			.flat_map(|item| item.into_chapters(base_url, slug_url))
+			.flat_map(|item| item.into_chapters(base_url, slug_url, user_id))
 			.collect()
 	}
 }
 
 impl LibGroupChapter {
-	pub fn into_pages(self, site_id: &u8) -> Vec<Page> {
+	pub fn into_pages(self, ctx: &Context) -> Vec<Page> {
 		self.pages
 			.into_iter()
 			.map(|page| Page {
 				content: PageContent::url(format!(
 					"{}{}",
-					get_selected_image_server_url(site_id),
+					get_selected_image_server_url(ctx),
 					page.url
 				)),
 				..Default::default()
