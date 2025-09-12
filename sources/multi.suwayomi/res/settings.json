@@ -1,0 +1,17 @@
+[
+	{
+		"type": "group",
+		"title": "Server settings",
+		"items": [
+			{
+				"type": "text",
+				"placeholder": "Suwayomi Base Url",
+				"key": "baseUrl",
+				"keyboardType": 3,
+				"returnKeyType": 9,
+				"autocorrectionDisabled": true,
+				"refreshes": ["content"]
+			}
+		]
+	}
+]
