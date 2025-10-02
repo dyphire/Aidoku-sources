@@ -16,6 +16,7 @@ use aidoku::{
 };
 use chrono::{TimeZone, Utc};
 use hashbrown::HashSet;
+use regex::Regex;
 
 impl Home for MangaDex {
 	fn get_home(&self) -> Result<HomeLayout> {
@@ -56,6 +57,46 @@ impl Home for MangaDex {
 					.collect(),
 			})
 			.collect::<Vec<_>>();
+
+		// fetch seasonal list
+		let seasonal_regax = Regex::new(r"^Seasonal:\s*(?P<season>Winter|Spring|Summer|Fall)\s*(?P<year>\d{4})$").unwrap();
+		let season_to_rank = |season: &str| -> u8 {
+			match season.to_lowercase().as_str() {
+				"winter" => 1,
+				"spring" => 2,
+				"summer" => 3,
+				"fall" => 4,
+				_ => 0,
+			}
+		};
+		
+		let owner_user_id = "d2ae45e0-b5e2-4e7f-a688-17925c2d7d6b";
+  		let mut seasonal_res = Request::get(format!("{API_URL}/user/{owner_user_id}/list"))?.send()?;
+    	if let Ok(response) = seasonal_res.get_json::<DexResponse<Vec<DexCustomList>>>() {
+			let current_seasonal_lists = response.data
+				.iter()
+				.filter_map(|item| {
+					let name = &item.attributes.name;
+					let captures = seasonal_regax.captures(name)?;
+					let year = captures.name("year")?.as_str().parse::<u16>().ok();
+					let season_rank = season_to_rank(captures.name("season")?.as_str());
+
+					let manga_ids = item.relationships.iter().filter_map(|relationship| {
+						if relationship.r#type == "manga" {
+							Some(relationship.id)
+						} else {
+							None
+						}
+					})
+					.collect::<Vec<&str>>();
+
+					Some((year, season_rank, item.id, name, manga_ids))
+				})
+				.max_by(|(y1, s1, _, _, _), (y2, s2, _, _, _)| (y1,s1).cmp(&(y2,s2)))
+				.map(|(_, _, id, name, manga_ids)| CustomList { id, name: name.clone(), entries: manga_ids });
+
+			custom_lists.extend(current_seasonal_lists);
+		};
 
 		// send basic home layout
 		{
@@ -251,7 +292,7 @@ impl Home for MangaDex {
 			let custom_list_responses = Request::send_all(custom_lists.iter().map(|list| {
 				Request::get(format!(
 					"{API_URL}/manga\
-						?limit=32\
+						?limit=100\
 						&includes[]=cover_art\
 						{content_ratings}\
 						&ids[]={}",

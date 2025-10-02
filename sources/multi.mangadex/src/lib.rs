@@ -35,7 +35,6 @@ const CUSTOM_LISTS: &[&str] = &[
 	"f66ebc10-ef89-46d1-be96-bb704559e04a", // Self-Published
 	"805ba886-dd99-4aa4-b460-4bd7c7b71352", // Staff Picks
 	"5c5e6e39-0b4b-413e-be59-27b1ba03d1b9", // Featured by Supporters
-	"a5ba5473-07b2-4d0a-aefd-90d9d4a04521", // Seasonal
 ];
 
 struct MangaDex;
@@ -221,6 +220,7 @@ impl Source for MangaDex {
 		if needs_chapters {
 			let languages = settings::get_languages_with_key("translatedLanguage")?;
 			let blocked_groups = settings::get_blocked_uuids()?;
+			let show_unavailable_chapters = settings::get_locked_chapters();
 
 			let url = format!(
 				"{API_URL}/manga/{}/feed\
@@ -231,11 +231,13 @@ impl Source for MangaDex {
 					&contentRating[]=erotica\
 					&contentRating[]=suggestive\
 					&contentRating[]=safe\
+					&includeUnavailable={}\
 					&includes[]=user\
 					&includes[]=scanlation_group\
 					{languages}\
 					{blocked_groups}",
-				manga.key
+				manga.key,
+				if show_unavailable_chapters { "1" } else { "0" }
 			);
 
 			let (mut chapters, total) = Request::get(&url)?
@@ -389,7 +391,7 @@ impl MangaDex {
 		// assume the list is 32 items or less (mangadex site uses this value)
 		let entries = Request::get(format!(
 			"{API_URL}/manga\
-					?limit=32\
+					?limit=100\
 					&includes[]=cover_art\
 					{content_ratings}\
 					&ids[]={}",
@@ -560,6 +562,12 @@ impl AlternateCoverProvider for MangaDex {
 				offset += 100;
 			}
 		}
+
+		items.sort_by(|a, b| {
+			let num_a = a.attributes.volume.as_ref().and_then(|a| a.parse::<f32>().ok()).unwrap_or(0.0);
+			let num_b = b.attributes.volume.as_ref().and_then(|b| b.parse::<f32>().ok()).unwrap_or(0.0);
+			num_b.total_cmp(&num_a)
+		});
 
 		let result = items
 			.iter()
