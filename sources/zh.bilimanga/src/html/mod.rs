@@ -1,4 +1,4 @@
-use crate::net::Url;
+use crate::{BASE_URL, USER_AGENT, net::Url};
 use aidoku::{
 	Manga, MangaPageResult, MangaStatus, Page, Result,
 	alloc::{String, Vec, string::ToString as _},
@@ -13,7 +13,8 @@ fn extract_chapter_number(title: &str) -> Option<f32> {
 	if let Some(captures) = re.captures(title) {
 		let num_match = captures.get(1).or_else(|| captures.get(2));
 		if let Some(num_match) = num_match {
-			let num_str = num_match.as_str()
+			let num_str = num_match
+				.as_str()
 				.chars()
 				.map(|c| match c {
 					'０' => '0',
@@ -46,13 +47,20 @@ pub trait MangaPage {
 impl MangaPage for Document {
 	fn update_details(&self, manga: &mut Manga) -> Result<()> {
 		manga.cover = self.try_select_first(".book-cover")?.attr("src");
-		manga.title = self.try_select_first("h1.book-title")?.text().unwrap_or_default();
+		manga.title = self
+			.try_select_first("h1.book-title")?
+			.text()
+			.unwrap_or_default();
 		let authors = self
 			.try_select(".authorname,.illname")?
 			.filter_map(|a| a.text())
 			.collect::<Vec<String>>();
 		manga.authors = Some(authors);
-		manga.description = Some(self.try_select_first(".book-summary>content")?.text().unwrap_or_default());
+		manga.description = Some(
+			self.try_select_first(".book-summary>content")?
+				.text()
+				.unwrap_or_default(),
+		);
 		let tags = self
 			.try_select(".tag-small-group>.tag-small>a")?
 			.filter_map(|a| a.text())
@@ -77,60 +85,30 @@ impl MangaPage for Document {
 		manga.url = Some(Url::manga(manga.key.clone()).to_string());
 		Ok(())
 	}
-
 	fn manga_page_result(&self) -> Result<MangaPageResult> {
-		let link = self.try_select("#pagelink")?;
-		let has_next_page = if let Some(alternate) = self.select("link[rel='alternate']") {
-			if alternate.first().unwrap().attr("href").unwrap_or_default().is_empty() {
-				if self.try_select(".book-li>a")?.is_empty() {
-					false
-				} else {
-					link.select("strong").unwrap().text().unwrap_or_default() != link.select(".last").unwrap().text().unwrap_or_default()
-				}
-			} else {
-				link.select(".next").unwrap().first().unwrap().attr("href").unwrap_or_default() != "#"
-			}
-		} else {
-			false
-		};
-
 		let mut entries: Vec<Manga> = Vec::new();
 
-		if let Some(alternate) = self.select("link[rel='alternate']") {
-			if !alternate.first().unwrap().attr("href").unwrap_or_default().is_empty() {
-				let alternate_url = alternate.first().unwrap().attr("href").unwrap();
-				let key = alternate_url
-					.split("/")
-					.map(|a| a.to_string())
-					.filter(|a| !a.is_empty())
-					.collect::<Vec<String>>()
-					.pop()
-					.unwrap()
-					.replace(".html", "");
-				let cover = self.try_select_first(".book-cover")?.attr("src");
-				let title = self.try_select_first("h1.book-title")?.text().unwrap_or_default();
+		// Parse manga list
+		let items = self.try_select(".book-li>a")?;
+		for item in items {
+			let href = item.attr("href").unwrap_or_default();
+			let key = href
+				.split("/")
+				.filter_map(|s| if s.is_empty() { None } else { Some(s) })
+				.last()
+				.unwrap_or_default()
+				.replace(".html", "");
 
-				entries.push(Manga {
-					key,
-					cover,
-					title,
-					..Default::default()
-				});
-			}
-		} else {
-			for item in self.try_select(".book-li>a")? {
-				let key = item
-					.attr("href")
-					.unwrap_or_default()
-					.split("/")
-					.map(|a| a.to_string())
-					.filter(|a| !a.is_empty())
-					.collect::<Vec<String>>()
-					.pop()
-					.unwrap()
-					.replace(".html", "");
-				let cover = item.select(".book-cover>img").unwrap().first().unwrap().attr("data-src");
-				let title = item.select(".book-title").unwrap().text().unwrap_or_default();
+			let cover = item
+				.select(".book-cover>img")
+				.and_then(|img| img.first())
+				.and_then(|img| img.attr("data-src"));
+			let title = item
+				.select(".book-title")
+				.and_then(|title| title.text())
+				.unwrap_or_default();
+
+			if !key.is_empty() && !title.is_empty() {
 				entries.push(Manga {
 					key,
 					cover,
@@ -139,6 +117,29 @@ impl MangaPage for Document {
 				});
 			}
 		}
+
+		let has_next_page = self
+			.select("#pagelink")
+			.and_then(|pagelink| {
+				let strong_text = pagelink
+					.select("strong")
+					.and_then(|s| s.first())
+					.and_then(|s| s.text());
+				let last_text = pagelink
+					.select(".last")
+					.and_then(|l| l.first())
+					.and_then(|l| l.text());
+				if let (Some(current), Some(last)) = (strong_text, last_text) {
+					Some(current != last)
+				} else {
+					pagelink
+						.select(".next")
+						.and_then(|n| n.first())
+						.and_then(|n| n.attr("href"))
+						.map(|href| href != "#")
+				}
+			})
+			.unwrap_or(false);
 
 		Ok(MangaPageResult {
 			entries,
@@ -152,7 +153,7 @@ pub trait ChapterPage {
 }
 
 impl ChapterPage for Document {
-	fn chapters(&self, manga_id: &str) -> Result<Vec<aidoku::Chapter>> {
+	fn chapters(&self, _manga_id: &str) -> Result<Vec<aidoku::Chapter>> {
 		let volumes = self.try_select(".catalog-volume")?;
 		let mut chapters: Vec<aidoku::Chapter> = Vec::new();
 
@@ -164,17 +165,32 @@ impl ChapterPage for Document {
 			if !chapter_links.is_empty() {
 				let mut has_javascript_link = false;
 				for link in chapter_links {
-					if link.attr("href").unwrap_or_default().starts_with("javascript:") {
+					if link
+						.attr("href")
+						.unwrap_or_default()
+						.starts_with("javascript:")
+					{
 						has_javascript_link = true;
 						break;
 					}
 				}
+				let volume_thumbnail = volume
+					.select(".volume-cover-img img")
+					.and_then(|img| img.first())
+					.and_then(|img| img.attr("data-src"));
+
 				if has_javascript_link {
-					let vol_href = volume.select(".volume-cover-img").unwrap().first().unwrap().attr("href").unwrap_or_default();
-					let vol_url = format!("https://www.bilimanga.net{}", vol_href);
+					let vol_href = volume
+						.select(".volume-cover-img")
+						.unwrap()
+						.first()
+						.unwrap()
+						.attr("href")
+						.unwrap_or_default();
+					let vol_url = format!("{}{}", BASE_URL, vol_href);
 					let vol_html = aidoku::imports::net::Request::get(vol_url)?
-						.header("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1")
-						.header("Origin", "https://www.bilimanga.net")
+						.header("User-Agent", USER_AGENT)
+						.header("Origin", BASE_URL)
 						.html()?;
 					for chapter_item in vol_html.try_select(".catalog-volume .chapter-li-a")? {
 						let chapter_href = chapter_item.attr("href").unwrap_or_default();
@@ -186,15 +202,21 @@ impl ChapterPage for Document {
 							.pop()
 							.unwrap()
 							.replace(".html", "");
-						let title = chapter_item.select("span").unwrap().text().unwrap_or_default();
-						let chapter_num = extract_chapter_number(&title).unwrap_or(chapters.len() as f32 + 1.0);
-						let url = format!("https://www.bilimanga.net{}", chapter_href);
+						let title = chapter_item
+							.select("span")
+							.unwrap()
+							.text()
+							.unwrap_or_default();
+						let chapter_num =
+							extract_chapter_number(&title).unwrap_or(chapters.len() as f32 + 1.0);
+						let url = format!("{}{}", BASE_URL, chapter_href);
 						chapters.push(aidoku::Chapter {
 							key: chapter_key,
 							title: Some(title),
 							volume_number: Some(volume_num),
 							chapter_number: Some(chapter_num),
 							url: Some(url),
+							thumbnail: volume_thumbnail.clone(),
 							..Default::default()
 						});
 					}
@@ -211,14 +233,16 @@ impl ChapterPage for Document {
 							.unwrap()
 							.replace(".html", "");
 						let title = item.select("span").unwrap().text().unwrap_or_default();
-						let chapter_num = extract_chapter_number(&title).unwrap_or(chapters.len() as f32 + 1.0);
-						let url = format!("https://www.bilimanga.net{}", chapter_href);
+						let chapter_num =
+							extract_chapter_number(&title).unwrap_or(chapters.len() as f32 + 1.0);
+						let url = format!("{}{}", BASE_URL, chapter_href);
 						chapters.push(aidoku::Chapter {
 							key: chapter_key,
 							title: Some(title),
 							chapter_number: Some(chapter_num),
 							volume_number: Some(volume_num),
 							url: Some(url),
+							thumbnail: volume_thumbnail.clone(),
 							..Default::default()
 						});
 					}

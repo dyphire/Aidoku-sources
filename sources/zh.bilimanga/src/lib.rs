@@ -4,12 +4,16 @@ mod html;
 mod net;
 
 use aidoku::{
-	Chapter, DeepLinkHandler, DeepLinkResult, Manga, MangaPageResult, Page, Result, Source,
+	Chapter, DeepLinkHandler, DeepLinkResult, ImageRequestProvider, Manga, MangaPageResult, Page,
+	Result, Source,
 	alloc::{String, Vec},
 	prelude::*,
 };
 use html::{ChapterPage as _, MangaPage as _, PageList as _};
 use net::Url;
+
+pub const BASE_URL: &str = "https://www.bilimanga.net";
+pub const USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1";
 
 struct Bilimanga;
 
@@ -56,9 +60,21 @@ impl Source for Bilimanga {
 	}
 }
 
+impl ImageRequestProvider for Bilimanga {
+	fn get_image_request(
+		&self,
+		url: String,
+		_context: Option<aidoku::PageContext>,
+	) -> Result<aidoku::imports::net::Request> {
+		Ok(aidoku::imports::net::Request::get(url)?
+			.header("User-Agent", USER_AGENT)
+			.header("Referer", BASE_URL))
+	}
+}
+
 impl DeepLinkHandler for Bilimanga {
 	fn handle_deep_link(&self, url: String) -> Result<Option<DeepLinkResult>> {
-		let url = url.trim_start_matches("https://www.bilimanga.net");
+		let url = url.trim_start_matches(BASE_URL);
 		let mut splits = url.split('/').skip(1);
 		let deep_link_result = match splits.next() {
 			Some("detail") => match splits.next() {
@@ -84,4 +100,4 @@ impl DeepLinkHandler for Bilimanga {
 	}
 }
 
-register_source!(Bilimanga, DeepLinkHandler);
+register_source!(Bilimanga, ImageRequestProvider, DeepLinkHandler);
