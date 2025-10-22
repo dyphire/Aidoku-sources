@@ -3,7 +3,7 @@ use crate::{
 	net::Url,
 };
 use aidoku::{
-	AidokuError, Manga, MangaPageResult, MangaStatus, Page, Result, SelectFilter,
+	Manga, MangaPageResult, MangaStatus, Page, Result, SelectFilter,
 	alloc::{String, Vec, borrow::ToOwned as _, format},
 	error,
 	imports::{
@@ -53,8 +53,7 @@ impl FiltersPage for Document {
 			.attr("list")
 			.ok_or_else(|| error!("Attribute not found: `list`"))?;
 		let json = JsContext::new().eval(&format!("JSON.stringify({single_quoted_json})"))?;
-		let entries = serde_json::from_str::<Vec<MangaItem>>(&json)
-			.map_err(AidokuError::message)?
+		let entries = serde_json::from_str::<Vec<MangaItem>>(&json)?
 			.into_iter()
 			.map(Into::into)
 			.collect();
@@ -96,8 +95,7 @@ impl MangaPage for Document {
 
 		manga.description = self.try_select_first("p.intro")?.text();
 
-		let url = Url::manga(&manga.key).into();
-		manga.url = Some(url);
+		manga.url = Url::manga(&manga.key).to_string().ok();
 
 		let tags = self
 			.try_select("span.comicParticulars-tag > a")?
@@ -145,6 +143,7 @@ impl KeyPage for Document {
 
 pub trait ChapterPage {
 	fn pages(&self) -> Result<Vec<Page>>;
+	fn dnt(&self) -> Option<String>;
 }
 
 impl ChapterPage for Document {
@@ -158,17 +157,20 @@ impl ChapterPage for Document {
 			})
 			.ok_or_else(|| error!("No script content contains `var`"))?
 			.split_once("var contentKey = '")
-			.ok_or_else(|| error!("String not fount: `var contentKey = '`"))?
+			.ok_or_else(|| error!("String not found: `var contentKey = '`"))?
 			.1
 			.split_once("';")
 			.ok_or_else(|| error!("String not found: `';`"))?
 			.0
 			.decrypt(&key)?;
-		serde_json::from_slice::<Vec<page_list::Item>>(&json)
-			.map_err(AidokuError::message)?
+		serde_json::from_slice::<Vec<page_list::Item>>(&json)?
 			.into_iter()
 			.map(TryInto::try_into)
 			.collect()
+	}
+
+	fn dnt(&self) -> Option<String> {
+		self.select_first("#dnt")?.attr("value")
 	}
 }
 

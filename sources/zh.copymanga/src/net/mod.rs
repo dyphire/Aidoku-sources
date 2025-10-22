@@ -4,13 +4,12 @@ use aidoku::{
 	alloc::{String, format, string::ToString as _},
 	bail, error,
 	helpers::uri::QueryParameters,
-	imports::net::Request,
+	imports::{defaults::defaults_get, net::Request},
 };
 use core::fmt::{Display, Formatter, Result as FmtResult};
 use strum::{AsRefStr, Display, EnumIs, FromRepr};
 
 #[derive(Display, EnumIs)]
-#[strum(prefix = "https://www.2025copy.com")]
 pub enum Url<'a> {
 	#[strum(to_string = "/filter")]
 	GenresPage,
@@ -29,17 +28,19 @@ pub enum Url<'a> {
 }
 
 impl Url<'_> {
+	pub fn to_string(&self) -> Result<String> {
+		let base_url = defaults_get::<String>("url")
+			.ok_or_else(|| error!("Default not exist or not string for key: `url`"))?;
+		Ok(format!("{base_url}{self}"))
+	}
+
 	pub fn request(&self) -> Result<Request> {
-		let mut request = Request::get(self.to_string())?.header(
+		let url = self.to_string()?;
+		let request = Request::get(url)?.header(
 			"User-Agent",
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
-			 AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15",
+			 AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0.1 Safari/605.1.15",
 		);
-
-		if self.is_chapter_list() {
-			request.set_header("dnts", "1");
-		}
-
 		Ok(request)
 	}
 
@@ -62,8 +63,8 @@ impl Url<'_> {
 
 		for filter in filters {
 			#[expect(clippy::wildcard_enum_match_arm)]
-			match filter {
-				FilterValue::Text { id, value } => match id.as_str() {
+			match *filter {
+				FilterValue::Text { ref id, ref value } => match id.as_str() {
 					"author" => {
 						let search_query = SearchQuery::new(page, value, SearchType::Author);
 						let url = Self::search(search_query)?;
@@ -73,19 +74,19 @@ impl Url<'_> {
 				},
 
 				FilterValue::Sort {
-					id,
+					ref id,
 					index,
 					ascending,
 				} => match id.as_str() {
 					"排序" => {
-						is_asc = *ascending;
-						sort = Sort::from_repr(*index)
+						is_asc = ascending;
+						sort = Sort::from_repr(index)
 							.ok_or_else(|| error!("Invalid `排序` index: `{index}`"))?;
 					}
 					_ => bail!("Invalid sort filter ID: `{id}`"),
 				},
 
-				FilterValue::Select { id, value } => match id.as_str() {
+				FilterValue::Select { ref id, ref value } => match id.as_str() {
 					"地區" => r#type = value,
 					"狀態" => status = value,
 					"題材" => genre = value.into(),
@@ -136,12 +137,6 @@ impl<'a> Url<'a> {
 
 	pub const fn chapter(manga_key: &'a str, key: &'a str) -> Self {
 		Self::Chapter { manga_key, key }
-	}
-}
-
-impl From<Url<'_>> for String {
-	fn from(url: Url<'_>) -> Self {
-		url.to_string()
 	}
 }
 
