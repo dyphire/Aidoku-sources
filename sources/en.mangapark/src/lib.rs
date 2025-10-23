@@ -9,6 +9,7 @@ use aidoku::{
 };
 
 mod filter;
+mod helper;
 mod model;
 
 const BASE_URL: &str = "https://mangapark.com";
@@ -128,7 +129,27 @@ impl Source for MangaPark {
 							.and_then(|el| el.attr("abs:href"))
 							.unwrap_or_default();
 						let key = url.strip_prefix(&manga_url).unwrap_or_default().into();
-						let title = links.as_ref().and_then(|el| el.text());
+						let vol_and_chap_number =
+							links.as_ref().and_then(|el| el.text()).unwrap_or_default();
+						let title = element
+							.select_first("[q:key=\"8t_1\"]")
+							.and_then(|element| element.text())
+							.unwrap_or_default();
+						let mut volume_number: Option<f32> = None;
+						let mut chapter_number: Option<f32> = None;
+						let mut final_title: Option<String> = Some(vol_and_chap_number.to_string());
+						let is_chapter = vol_and_chap_number.contains("Ch");
+						if is_chapter {
+							let (vol_num, ch_num, chapter_title) =
+								helper::get_volume_and_chapter_number(vol_and_chap_number);
+							volume_number = vol_num;
+							chapter_number = ch_num;
+							final_title = chapter_title;
+						}
+						if !title.is_empty() {
+							final_title =
+								Some(title.strip_prefix(":").unwrap_or(&title).trim().to_string());
+						}
 						let date_uploaded = element
 							.select_first("time")
 							.and_then(|el| el.attr("data-time"))?
@@ -139,7 +160,9 @@ impl Source for MangaPark {
 							.unwrap_or_default();
 						Some(Chapter {
 							key,
-							title,
+							title: final_title,
+							chapter_number,
+							volume_number,
 							date_uploaded: Some(date_uploaded),
 							url: Some(url),
 							..Default::default()
