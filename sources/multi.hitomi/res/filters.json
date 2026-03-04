@@ -28,7 +28,14 @@
 		"type": "select",
 		"id": "type",
 		"title": "Type",
-		"options": ["Any", "Artist CG", "Doujinshi", "Game CG", "Image Set", "Manga"],
+		"options": [
+			"Any",
+			"Artist CG",
+			"Doujinshi",
+			"Game CG",
+			"Image Set",
+			"Manga"
+		],
 		"ids": ["", "artistcg", "doujinshi", "gamecg", "imageset", "manga"]
 	}
 ]
