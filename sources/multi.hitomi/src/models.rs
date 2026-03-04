@@ -109,67 +109,24 @@ impl HitomiGallery {
 
 impl From<HitomiGallery> for Manga {
 	fn from(g: HitomiGallery) -> Self {
+		let cover = g.cover_url();
+
 		let artists: Vec<String> = g
 			.artists
-			.as_deref()
 			.unwrap_or_default()
-			.iter()
-			.map(|a| a.artist.clone())
+			.into_iter()
+			.map(|a| a.artist)
 			.collect();
 
 		let groups: Vec<String> = g
 			.groups
-			.as_deref()
 			.unwrap_or_default()
-			.iter()
-			.map(|gr| gr.group.clone())
+			.into_iter()
+			.map(|gr| gr.group)
 			.collect();
 
 		// authors = groups + artists (combined), matching nhentai pattern
-		let combined_authors: Vec<String> = [groups.clone(), artists.clone()].concat();
-
-		let mut tags: Vec<String> = Vec::new();
-		if let Some(tag_list) = &g.tags {
-			for t in tag_list {
-				if t.female == "1" {
-					tags.push(format!("{}♀", t.tag));
-				} else if t.male == "1" {
-					tags.push(format!("{}♂", t.tag));
-				} else {
-					tags.push(t.tag.clone());
-				}
-			}
-		}
-
-		let title_preference = get_title_preference();
-
-		let mut description_parts: Vec<String> = Vec::new();
-		match title_preference {
-			TitlePreference::Japanese => {
-				if g.japanese_title.is_some() {
-					description_parts.push(format!("English title: {}", g.title));
-				}
-			}
-			TitlePreference::English => {
-				if let Some(jp) = &g.japanese_title {
-					description_parts.push(format!("Japanese title: {jp}"));
-				}
-			}
-		}
-		description_parts.push(format!("Type: {}", g.r#type));
-		description_parts.push(format!("Pages: {}", g.files.len()));
-		if let Some(parodys) = &g.parodys
-			&& !parodys.is_empty()
-		{
-			let s: Vec<String> = parodys.iter().map(|p| p.parody.clone()).collect();
-			description_parts.push(format!("Series: {}", s.join(", ")));
-		}
-		if let Some(characters) = &g.characters
-			&& !characters.is_empty()
-		{
-			let s: Vec<String> = characters.iter().map(|c| c.character.clone()).collect();
-			description_parts.push(format!("Characters: {}", s.join(", ")));
-		}
+		let combined_authors: Vec<String> = [groups, artists.clone()].concat();
 
 		// If tags contain any of these keywords, prefer Webtoon viewer
 		let keywords = [
@@ -200,7 +157,6 @@ impl From<HitomiGallery> for Manga {
 				}
 			}
 		}
-
 		let viewer = if g.r#type == "anime" {
 			Viewer::Vertical
 		} else if is_webtoon {
@@ -209,10 +165,53 @@ impl From<HitomiGallery> for Manga {
 			Viewer::RightToLeft
 		};
 
+		let mut tags: Vec<String> = Vec::new();
+		if let Some(tag_list) = g.tags {
+			for t in tag_list {
+				if t.female == "1" {
+					tags.push(format!("{}♀", t.tag));
+				} else if t.male == "1" {
+					tags.push(format!("{}♂", t.tag));
+				} else {
+					tags.push(t.tag);
+				}
+			}
+		}
+
+		let title_preference = get_title_preference();
+
+		let mut description_parts: Vec<String> = Vec::new();
+		match title_preference {
+			TitlePreference::Japanese => {
+				if g.japanese_title.is_some() {
+					description_parts.push(format!("English title: {}", g.title));
+				}
+			}
+			TitlePreference::English => {
+				if let Some(jp) = &g.japanese_title {
+					description_parts.push(format!("Japanese title: {jp}"));
+				}
+			}
+		}
+		description_parts.push(format!("Type: {}", g.r#type));
+		description_parts.push(format!("Pages: {}", g.files.len()));
+		if let Some(parodys) = &g.parodys
+			&& !parodys.is_empty()
+		{
+			let s: Vec<&str> = parodys.into_iter().map(|p| p.parody.as_str()).collect();
+			description_parts.push(format!("Series: {}", s.join(", ")));
+		}
+		if let Some(characters) = &g.characters
+			&& !characters.is_empty()
+		{
+			let s: Vec<&str> = characters.iter().map(|c| c.character.as_str()).collect();
+			description_parts.push(format!("Characters: {}", s.join(", ")));
+		}
+
 		let title = match title_preference {
 			TitlePreference::Japanese => {
-				if let Some(jp) = &g.japanese_title {
-					jp.clone()
+				if let Some(jp) = g.japanese_title {
+					jp
 				} else if g.title.contains('|') {
 					// If no japanese title but main title contains '|', use right side (trimmed)
 					let parts: Vec<&str> = g.title.splitn(2, '|').collect();
@@ -220,19 +219,19 @@ impl From<HitomiGallery> for Manga {
 					if !after.is_empty() {
 						after.into()
 					} else {
-						g.title.clone()
+						g.title
 					}
 				} else {
-					g.title.clone()
+					g.title
 				}
 			}
-			TitlePreference::English => g.title.clone(),
+			TitlePreference::English => g.title,
 		};
 
 		Manga {
-			key: g.id.clone(),
+			key: g.id,
 			title,
-			cover: Some(g.cover_url()),
+			cover: Some(cover),
 			description: Some(description_parts.join("  \n")),
 			authors: if !combined_authors.is_empty() {
 				Some(combined_authors)

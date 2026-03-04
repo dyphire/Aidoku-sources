@@ -3,7 +3,10 @@ use aidoku::{
 	Chapter, DeepLinkHandler, DeepLinkResult, FilterValue, HashMap, ImageRequestProvider, Listing,
 	ListingProvider, Manga, MangaPageResult, Page, PageContent, PageContext, Result, Source,
 	alloc::{String, Vec, string::ToString, vec},
-	imports::{net::Request, std::parse_date},
+	imports::{
+		net::Request,
+		std::{current_date, parse_date},
+	},
 	prelude::*,
 };
 use core::cell::RefCell;
@@ -13,8 +16,10 @@ mod models;
 mod search;
 mod settings;
 
-use gg::{GgState, fetch_gallery, fetch_gg_state, image_url, parse_galleryinfo_js};
-use search::{decode_nozomi, fetch_nozomi_page, nozomi_url_for_ns_tag, search_plain_text};
+use gg::*;
+use search::*;
+
+use crate::gg::get_new_gg;
 
 pub const BASE_URL: &str = "https://hitomi.la";
 pub const REFERER: &str = "https://hitomi.la/";
@@ -50,9 +55,9 @@ impl Source for Hitomi {
 		let mut author_name: Option<String> = None;
 		let mut genre_filter: Option<String> = None;
 
-		for f in &filters {
+		for f in filters {
 			match f {
-				FilterValue::Sort { index, .. } => match *index {
+				FilterValue::Sort { index, .. } => match index {
 					1 => {
 						sort_area = Some("popular".into());
 						sort_tag = "published".into();
@@ -94,7 +99,7 @@ impl Source for Hitomi {
 				},
 				FilterValue::Select { id, value } => match id.as_str() {
 					"type" if !value.is_empty() => {
-						type_filter = Some(value.clone());
+						type_filter = Some(value);
 					}
 					"genre" => {
 						// '♀' -> female:, '♂' -> male:
@@ -398,16 +403,12 @@ impl Source for Hitomi {
 			.parse()
 			.map_err(|_| error!("Invalid gallery id"))?;
 		let gallery = fetch_gallery(id).ok_or_else(|| error!("Failed to fetch gallery"))?;
-		if needs_details {
-			let new_manga: Manga = gallery.clone().into();
-			manga.copy_from(new_manga);
-		}
-		if needs_chapters {
+		let chapters = if needs_chapters {
 			let scanlators = gallery
 				.language
-				.clone()
+				.as_ref()
 				.filter(|l| !l.is_empty())
-				.map(|l| vec![l]);
+				.map(|l| vec![l.clone()]);
 			let date_uploaded =
 				parse_date(&gallery.date[..10.min(gallery.date.len())], "yyyy-MM-dd");
 			let chapter = Chapter {
@@ -418,7 +419,16 @@ impl Source for Hitomi {
 				scanlators,
 				..Default::default()
 			};
-			manga.chapters = Some(vec![chapter]);
+			Some(vec![chapter])
+		} else {
+			None
+		};
+		if needs_details {
+			let new_manga: Manga = gallery.into();
+			manga.copy_from(new_manga);
+		}
+		if needs_chapters {
+			manga.chapters = chapters;
 		}
 		Ok(manga)
 	}
@@ -431,7 +441,19 @@ impl Source for Hitomi {
 		let gallery = fetch_gallery(id).ok_or_else(|| error!("Failed to fetch gallery"))?;
 
 		// Fetch gg.js to get current subdomain routing state
-		let gg = fetch_gg_state(&self.gg_cache).ok_or_else(|| error!("Failed to fetch gg.js"))?;
+		{
+			let now = current_date();
+			let cached = self.gg_cache.borrow();
+			if cached.as_ref().is_none_or(|&(_, ts)| now - ts > 60) {
+				if let Some(gg) = get_new_gg() {
+					*self.gg_cache.borrow_mut() = Some((gg, now));
+				}
+			}
+		}
+		let cache = self.gg_cache.borrow();
+		let gg = cache
+			.as_ref()
+			.ok_or_else(|| error!("Failed to fetch gg.js"))?;
 
 		let reader_url = format!("{BASE_URL}/reader/{id}.html");
 		let pages = gallery
@@ -439,7 +461,7 @@ impl Source for Hitomi {
 			.iter()
 			.map(|f| {
 				let ext = if f.is_gif() { "webp" } else { "avif" };
-				let url = image_url(&f.hash, ext, &gg);
+				let url = image_url(&f.hash, ext, &gg.0);
 				let mut ctx: PageContext = HashMap::new();
 				ctx.insert("referer".into(), reader_url.clone());
 				Page {

@@ -1,11 +1,9 @@
+use crate::{CDN_DOMAIN, LTN_URL, REFERER, models::HitomiGallery};
 use aidoku::{
 	alloc::{String, Vec},
-	imports::{net::Request, std::current_date},
+	imports::net::Request,
 	prelude::*,
 };
-
-use crate::{CDN_DOMAIN, LTN_URL, REFERER, models::HitomiGallery};
-use core::cell::RefCell;
 
 #[derive(Clone)]
 pub struct GgState {
@@ -15,30 +13,18 @@ pub struct GgState {
 	pub default_o: u32,
 }
 
-/// Fetch (or return a cached) GgState. The cache is stored on the source struct
-pub fn fetch_gg_state(cache: &RefCell<Option<(GgState, i64)>>) -> Option<GgState> {
-	let now = current_date();
-	{
-		let cached = cache.borrow();
-		if let Some((ref s, ts)) = *cached
-			&& now - ts < 60
-		{
-			return Some(s.clone());
-		}
-	}
-
+/// Fetch a new GgState.
+pub fn get_new_gg() -> Option<GgState> {
 	let url = format!("{LTN_URL}/gg.js");
 	let body = Request::get(&url)
 		.ok()?
 		.header("Referer", REFERER)
 		.string()
 		.ok()?;
-	let parsed = parse_gg_js(&body)?;
-	*cache.borrow_mut() = Some((parsed.clone(), now));
-	Some(parsed)
+	parse_gg_js(&body)
 }
 
-pub fn parse_gg_js(body: &str) -> Option<GgState> {
+fn parse_gg_js(body: &str) -> Option<GgState> {
 	let b_start = body.find("b: '")?;
 	let after_b = &body[b_start + 4..];
 	let b_end = after_b.find('\'')?;
