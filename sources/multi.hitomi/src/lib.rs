@@ -444,10 +444,10 @@ impl Source for Hitomi {
 		{
 			let now = current_date();
 			let cached = self.gg_cache.borrow();
-			if cached.as_ref().is_none_or(|&(_, ts)| now - ts > 60) {
-				if let Some(gg) = get_new_gg() {
-					*self.gg_cache.borrow_mut() = Some((gg, now));
-				}
+			if cached.as_ref().is_none_or(|&(_, ts)| now - ts > 60)
+				&& let Some(gg) = get_new_gg()
+			{
+				*self.gg_cache.borrow_mut() = Some((gg, now));
 			}
 		}
 		let cache = self.gg_cache.borrow();

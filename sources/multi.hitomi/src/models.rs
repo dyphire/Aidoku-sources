@@ -198,7 +198,7 @@ impl From<HitomiGallery> for Manga {
 		if let Some(parodys) = &g.parodys
 			&& !parodys.is_empty()
 		{
-			let s: Vec<&str> = parodys.into_iter().map(|p| p.parody.as_str()).collect();
+			let s: Vec<&str> = parodys.iter().map(|p| p.parody.as_str()).collect();
 			description_parts.push(format!("Series: {}", s.join(", ")));
 		}
 		if let Some(characters) = &g.characters
