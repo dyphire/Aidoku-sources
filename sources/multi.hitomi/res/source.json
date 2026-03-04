@@ -37,7 +37,7 @@
 	"listings": [
 		{
 			"id": "date_added",
-			"name": "Date Added"
+			"name": "Recently Added"
 		},
 		{
 			"id": "popular_today",
