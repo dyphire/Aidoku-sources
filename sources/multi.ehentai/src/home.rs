@@ -182,7 +182,7 @@ impl Home for EHentai {
 		let lang_param: Option<String> = get_language_filter().map(|lang| {
 			format!(
 				"&advsearch=1&f_apply=Apply+Filter&f_search={}",
-				encode_uri_component(format!("\"language:{}\"", lang))
+				encode_uri_component(format!("language:{}$", lang))
 			)
 		});
 
@@ -198,14 +198,14 @@ impl Home for EHentai {
 		let top_year_req = make_req("https://e-hentai.org/toplist.php?tl=12&p=0")?;
 		let popular_req = make_req(&format!("{base_url}/popular"))?;
 		let latest_req = if let Some(ref lp) = lang_param {
-			make_req(&format!("{base_url}/?{}", lp.trim_start_matches('&')))?
+			make_req(&format!("{base_url}/?{lp}"))?
 		} else {
 			make_req(&base_url)?
 		};
 
 		if logged_in {
 			let watched_url = if let Some(ref lp) = lang_param {
-				format!("{base_url}/watched?{}", lp.trim_start_matches('&'))
+				format!("{base_url}/watched?{lp}")
 			} else {
 				format!("{base_url}/watched")
 			};

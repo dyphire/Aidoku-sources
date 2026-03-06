@@ -439,27 +439,30 @@ impl ListingProvider for EHentai {
 			.unwrap_or_default();
 
 		// Build language filter query string
-		let lang_param: Option<String> = get_language_filter().map(|lang| {
+		let lang_search: Option<String> = get_language_filter().map(|lang| {
 			format!(
 				"&advsearch=1&f_apply=Apply+Filter&f_search={}",
-				encode_uri_component(format!("\"language:{}\"", lang))
+				encode_uri_component(format!("language:{}$", lang))
 			)
 		});
 
-		let build_query = |next: &str, lang: &Option<String>| -> String {
-			let mut parts: Vec<String> = Vec::new();
-			if !next.is_empty() {
-				parts.push(next.trim_start_matches('&').to_string());
-			}
+		// next param without leading '&'
+		let next_param_clean = next_param.trim_start_matches('&');
+
+		let build_query = |lang: &Option<String>, next: &str| -> String {
+			let mut parts: Vec<&str> = Vec::new();
 			if let Some(lp) = lang {
-				parts.push(lp.trim_start_matches('&').to_string());
+				parts.push(lp.as_str());
 			}
-			parts.join("")
+			if !next.is_empty() {
+				parts.push(next);
+			}
+			parts.join("&")
 		};
 
 		let url = match listing.id.as_str() {
 			"latest" => {
-				let q = build_query(&next_param, &lang_param);
+				let q = build_query(&lang_search, next_param_clean);
 				if q.is_empty() {
 					format!("{base_url}/")
 				} else {
@@ -468,7 +471,7 @@ impl ListingProvider for EHentai {
 			}
 			"popular" => format!("{base_url}/popular"),
 			"watched" => {
-				let q = build_query(&next_param, &lang_param);
+				let q = build_query(&lang_search, next_param_clean);
 				if q.is_empty() {
 					format!("{base_url}/watched")
 				} else {
