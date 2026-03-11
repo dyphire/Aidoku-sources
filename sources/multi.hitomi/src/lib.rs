@@ -443,10 +443,11 @@ impl Source for Hitomi {
 		// Fetch gg.js to get current subdomain routing state
 		{
 			let now = current_date();
-			let cached = self.gg_cache.borrow();
-			if cached.as_ref().is_none_or(|&(_, ts)| now - ts > 60)
-				&& let Some(gg) = get_new_gg()
-			{
+			let needs_update = {
+				let cached = self.gg_cache.borrow();
+				cached.as_ref().is_none_or(|&(_, ts)| now - ts > 60)
+			};
+			if needs_update && let Some(gg) = get_new_gg() {
 				*self.gg_cache.borrow_mut() = Some((gg, now));
 			}
 		}
