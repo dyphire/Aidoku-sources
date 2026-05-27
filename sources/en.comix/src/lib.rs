@@ -1,9 +1,11 @@
 #![no_std]
+
+use aidoku::imports::canvas::ImageRef;
 use aidoku::{
 	Chapter, DeepLinkHandler, DeepLinkResult, FilterValue, HashMap, Home, HomeComponent,
-	HomeLayout, HomePartialResult, ImageRequestProvider, Link, LinkValue, Listing, ListingProvider,
-	Manga, MangaPageResult, MangaWithChapter, NotificationHandler, Page, PageContent, Result,
-	Source,
+	HomeLayout, HomePartialResult, ImageRequestProvider, ImageResponse, Link, LinkValue, Listing,
+	ListingProvider, Manga, MangaPageResult, MangaWithChapter, NotificationHandler, Page,
+	PageContent, PageContext, PageImageProcessor, Result, Source,
 	alloc::{String, Vec, string::ToString, vec},
 	helpers::uri::{QueryParameters, encode_uri_component},
 	imports::{
@@ -12,6 +14,7 @@ use aidoku::{
 	},
 	prelude::*,
 };
+use base64::{Engine, engine::general_purpose};
 
 mod helpers;
 mod models;
@@ -238,15 +241,9 @@ impl Source for Comix {
 			}
 
 			let mut chapters: Vec<Chapter> = if deduplicate {
-				chapter_map
-					.into_values()
-					.map(|item| item.into_chapter(&manga.key))
-					.collect()
+				chapter_map.into_values().map(Into::into).collect()
 			} else {
-				chapter_list
-					.into_iter()
-					.map(|item| item.into_chapter(&manga.key))
-					.collect()
+				chapter_list.into_iter().map(Into::into).collect()
 			};
 
 			if deduplicate {
@@ -288,7 +285,15 @@ impl Source for Comix {
 					format!("{base_url}/{}", page.url.trim_start_matches('/'))
 				};
 				Page {
-					content: PageContent::url(url.replace("/si/", "/i/")),
+					content: if let Some(s) = page.s {
+						let mut context = PageContext::new();
+						context.insert("s".into(), s.to_string());
+						context.insert("width".into(), page.width.to_string());
+						context.insert("height".into(), page.height.to_string());
+						PageContent::url_context(url, context)
+					} else {
+						PageContent::url(url)
+					},
 					..Default::default()
 				}
 			})
@@ -495,12 +500,48 @@ impl ListingProvider for Comix {
 }
 
 impl ImageRequestProvider for Comix {
-	fn get_image_request(
-		&self,
-		url: String,
-		_context: Option<aidoku::PageContext>,
-	) -> Result<Request> {
+	fn get_image_request(&self, url: String, _context: Option<PageContext>) -> Result<Request> {
 		Ok(Request::get(url)?.header("Referer", &format!("{BASE_URL}/")))
+	}
+}
+
+impl PageImageProcessor for Comix {
+	fn process_page_image(
+		&self,
+		response: ImageResponse,
+		context: Option<PageContext>,
+	) -> Result<ImageRef> {
+		if let Some(context) = context {
+			if context.get("s").is_some_and(|s| s == "1") {
+				let Some(url) = response.request.url else {
+					bail!("Unable to get the image url")
+				};
+
+				let Some(width) = context.get("width").and_then(|s| s.parse::<f32>().ok()) else {
+					bail!("Unable to get the image width")
+				};
+
+				let Some(height) = context.get("height").and_then(|s| s.parse::<f32>().ok()) else {
+					bail!("Unable to get the image height")
+				};
+
+				let web_view = web::create_web_view()?;
+
+				let data_url = web::descramble_image(&web_view, width, height, url.as_ref())?;
+				let Some((_, base64_data)) = data_url.split_once(',') else {
+					bail!("Unable to get the raw image data")
+				};
+				let bytes: Vec<u8> = general_purpose::STANDARD
+					.decode(base64_data)
+					.or_else(|_| bail!("Invalid base64 data given"))?;
+
+				Ok(ImageRef::new(bytes.as_ref()))
+			} else {
+				Ok(response.image)
+			}
+		} else {
+			Ok(response.image)
+		}
 	}
 }
 
@@ -550,6 +591,7 @@ register_source!(
 	Home,
 	ListingProvider,
 	ImageRequestProvider,
+	PageImageProcessor,
 	NotificationHandler,
 	DeepLinkHandler
 );
