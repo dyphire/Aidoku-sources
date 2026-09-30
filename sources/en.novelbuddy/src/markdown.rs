@@ -1,7 +1,4 @@
 //! Convert chapter HTML to Aidoku Markdown.
-//!
-//! Approach adapted from en.freewebnovel's chapter converter and the shared
-//! libgroup template converter.
 
 use aidoku::{
 	alloc::{String, Vec, string::ToString},
@@ -10,7 +7,8 @@ use aidoku::{
 };
 use core::fmt::Write as _;
 
-/// Length of the longest consecutive backtick run in `text`.
+use crate::{settings, watermark};
+
 fn longest_backtick_run(text: &str) -> usize {
 	let mut longest = 0;
 	let mut current = 0;
@@ -35,9 +33,8 @@ fn append_raw_text(element: &Element, output: &mut String) {
 
 /// Append an element's direct text and child elements in document order.
 ///
-/// `child_nodes` yields text nodes (whose text is only reachable there),
-/// while `children` yields elements with reliable tag names; element-kind
-/// nodes are therefore paired with the next entry from `children`.
+/// Text nodes are only reachable via `child_nodes`, tag names only via
+/// `children`, so element-kind nodes pair with the next `children` entry.
 fn convert_children_to_markdown(element: &Element, output: &mut String) {
 	let mut elements = element.children();
 	for node in element.child_nodes() {
@@ -57,15 +54,28 @@ fn convert_children_to_markdown(element: &Element, output: &mut String) {
 	}
 }
 
+/// Terminate any open inline run before a block element, so a block
+/// following bare text starts a new paragraph. No-op when already separated.
+fn break_before_block(output: &mut String) {
+	if output.is_empty() {
+		return;
+	}
+	while !output.ends_with("\n\n") {
+		output.push('\n');
+	}
+}
+
 fn convert_element_to_markdown(element: &Element, output: &mut String) {
 	let tag = element.tag_name().unwrap_or_default();
 	match tag.as_str() {
 		"p" => {
+			break_before_block(output);
 			convert_children_to_markdown(element, output);
 			output.push_str("\n\n");
 		}
 		"br" => output.push_str("  \n"),
 		"h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+			break_before_block(output);
 			let level = tag.as_bytes()[1] - b'0';
 			for _ in 0..level {
 				output.push('#');
@@ -99,9 +109,8 @@ fn convert_element_to_markdown(element: &Element, output: &mut String) {
 			for _ in 0..ticks {
 				output.push('`');
 			}
-			// Space-pad whenever the content touches a delimiter boundary:
-			// CommonMark strips one space from both sides when they are
-			// present, which restores the original text verbatim.
+			// Space-pad content touching a delimiter boundary: CommonMark
+			// strips one space from both sides, restoring the text verbatim.
 			if raw.starts_with('`') || raw.ends_with('`') {
 				output.push(' ');
 				output.push_str(&raw);
@@ -114,6 +123,7 @@ fn convert_element_to_markdown(element: &Element, output: &mut String) {
 			}
 		}
 		"pre" => {
+			break_before_block(output);
 			let mut raw = String::default();
 			append_raw_text(element, &mut raw);
 			let fence = "`".repeat(3.max(longest_backtick_run(&raw) + 1));
@@ -127,6 +137,7 @@ fn convert_element_to_markdown(element: &Element, output: &mut String) {
 			output.push_str("\n\n");
 		}
 		"img" => {
+			break_before_block(output);
 			if let Some(src) = element.attr("src") {
 				let alt = element.attr("alt").unwrap_or_default();
 				let _ = write!(output, "![{alt}]({src})\n\n");
@@ -141,17 +152,20 @@ fn convert_element_to_markdown(element: &Element, output: &mut String) {
 				convert_children_to_markdown(element, output);
 			}
 		}
-		"hr" => output.push_str("---\n\n"),
+		"hr" => {
+			break_before_block(output);
+			output.push_str("---\n\n")
+		}
 		"ul" | "ol" => convert_list_to_markdown(element, &tag, output),
 		"blockquote" => convert_blockquote_to_markdown(element, output),
 		"div" | "section" | "article" | "header" | "footer" | "main" | "aside" => {
+			break_before_block(output);
 			convert_children_to_markdown(element, output);
 			if !output.ends_with("\n\n") && !output.ends_with('\n') {
 				output.push('\n');
 			}
 		}
-		// Inline containers carry no block semantics: pass their content
-		// through without injecting newlines mid-paragraph.
+		// Inline containers carry no block semantics.
 		"span" | "li" => convert_children_to_markdown(element, output),
 		// Unknown tags: recurse so their prose is still emitted.
 		_ => convert_children_to_markdown(element, output),
@@ -160,9 +174,10 @@ fn convert_element_to_markdown(element: &Element, output: &mut String) {
 
 /// Render list items as Markdown bullets or numbered entries.
 ///
-/// Numbering follows `li` position: non-item children are filtered out
-/// before enumeration so stray markup cannot shift the sequence.
+/// Non-item children are filtered out before enumeration so stray markup
+/// cannot shift the sequence.
 fn convert_list_to_markdown(element: &Element, tag: &str, output: &mut String) {
+	break_before_block(output);
 	let items: Vec<_> = element
 		.children()
 		.filter(|child| child.tag_name().as_deref() == Some("li"))
@@ -182,6 +197,7 @@ fn convert_list_to_markdown(element: &Element, tag: &str, output: &mut String) {
 /// Render a blockquote by prefixing every emitted line with `> `, keeping
 /// multi-block quotes valid Markdown.
 fn convert_blockquote_to_markdown(element: &Element, output: &mut String) {
+	break_before_block(output);
 	let mut quoted = String::default();
 	convert_children_to_markdown(element, &mut quoted);
 	for (index, line) in quoted.trim_end().lines().enumerate() {
@@ -196,14 +212,11 @@ fn convert_blockquote_to_markdown(element: &Element, output: &mut String) {
 
 /// Convert chapter HTML to Aidoku Markdown.
 ///
-/// The API's chapter content carries no ad markup (verified on live
-/// chapters): its placement spacers are empty, style-only divs that
-/// naturally emit nothing during conversion.
-///
-/// The fragment is wrapped in a container element before parsing: the
-/// fragment root itself cannot be traversed (its child lists come back
-/// empty), while a selected wrapper element supports the full traversal
-/// API, including root-level text and inline elements.
+/// The fragment is wrapped in a container before parsing: the fragment
+/// root itself cannot be traversed, while a selected wrapper supports
+/// the full traversal API. The API content carries no ad markup, only
+/// a promotional paragraph that [`watermark::strip`] removes unless the
+/// reader turned that off.
 pub fn html_to_markdown(html: &str) -> String {
 	// Concatenated rather than formatted: chapter content may contain
 	// braces, which format! would treat as placeholders.
@@ -216,7 +229,11 @@ pub fn html_to_markdown(html: &str) -> String {
 	if let Some(root) = doc.select_first("#nb-root") {
 		convert_children_to_markdown(&root, &mut output);
 	}
-	output.trim().to_string()
+	if settings::hide_watermark() {
+		watermark::strip(output.trim())
+	} else {
+		output.trim().to_string()
+	}
 }
 
 #[cfg(test)]
@@ -268,6 +285,30 @@ mod tests {
 		let html = "<div>text in div</div>";
 		let out = html_to_markdown(html);
 		assert_eq!(out, "text in div");
+	}
+
+	#[aidoku_test]
+	fn separates_bare_title_from_following_paragraph() {
+		// Real API shape (Chaotic Craftsman ch. 218): the chapter title is
+		// a bare text node inside the container, directly followed by the
+		// first paragraph. Without a break the two render glued together.
+		// (`\:`/`\.` escaping and the trailing spaces come from the
+		// source-whitespace handling, unchanged by the break. The leading
+		// space before "He" is the `<p>` content's own, kept as-is.)
+		let html =
+			"<div> Chapter 218: Ather’s Perspective\n<p> He woke up as he always did.</p></div>";
+		let out = html_to_markdown(html);
+		assert_eq!(
+			out,
+			"Chapter 218\\: Ather’s Perspective  \n\n He woke up as he always did\\."
+		);
+	}
+
+	#[aidoku_test]
+	fn separates_consecutive_divs() {
+		let html = "<div>first</div><div>second</div>";
+		let out = html_to_markdown(html);
+		assert_eq!(out, "first\n\nsecond");
 	}
 
 	#[aidoku_test]
