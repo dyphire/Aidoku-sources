@@ -11,6 +11,8 @@ use strum::{AsRefStr, Display, EnumIs, FromRepr};
 
 #[derive(Display, EnumIs)]
 pub enum Url<'a> {
+	#[strum(to_string = "")]
+	Home,
 	#[strum(to_string = "/filter")]
 	GenresPage,
 	#[strum(to_string = "/comics?{0}")]
@@ -89,9 +91,9 @@ impl Url<'_> {
 				},
 
 				FilterValue::Select { ref id, ref value } => match id.as_str() {
-					"地区" => r#type = value,
-					"状态" => status = value,
-					"题材" => genre = value.into(),
+					"地區" => r#type = value,
+					"狀態" => status = value,
+					"題材" => genre = value.into(),
 					"genre" => {
 						let genres = Self::GenresPage.request()?.html()?.filter()?;
 						let genre_id = genres
