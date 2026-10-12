@@ -195,7 +195,7 @@ impl Home for BigSolo {
 			.collect();
 
 		// Sort by timestamp (most recent first) and take the 10 last
-		latest_chapters.sort_by(|a, b| b.2.timestamp.cmp(&a.2.timestamp));
+		latest_chapters.sort_by_key(|chapter| core::cmp::Reverse(chapter.2.timestamp));
 		latest_chapters.truncate(10);
 
 		let latest_chapters: Vec<MangaWithChapter> = latest_chapters

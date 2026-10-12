@@ -252,10 +252,9 @@ This source locally tracks and saves any series found, which can be disabled in 
 					.filter_map(|value| {
 						let url = if let Some(url) = value.as_str() {
 							url.to_string()
-						} else if let Some(obj) = value.as_object() {
-							obj.get("src")?.as_str()?.into()
 						} else {
-							return None;
+							let obj = value.as_object()?;
+							obj.get("src")?.as_str()?.into()
 						};
 						Some(Page {
 							content: PageContent::url(helpers::img_url_handler(url)),
