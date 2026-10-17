@@ -3,7 +3,11 @@ use aidoku::{
 	FilterValue, Result,
 	alloc::{String, string::ToString as _},
 	helpers::uri::encode_uri,
-	imports::{html::Document, net::Request, std::sleep},
+	imports::{
+		html::{Document, Html},
+		net::Request,
+		std::sleep,
+	},
 	prelude::*,
 };
 use core::fmt::{Display, Formatter, Result as FmtResult};
@@ -140,4 +144,16 @@ pub fn fetch_html_retrying(mut request: impl FnMut() -> Result<Request>) -> Resu
 		}
 	}
 	bail!("[bakamh] Cloudflare still blocks after {CHALLENGE_TRIES} tries")
+}
+
+/// Fetches a page as raw text, erroring on a Cloudflare challenge without retrying.
+pub fn fetch_text(request: Request) -> Result<String> {
+	let text = request.send()?.get_string()?;
+	if Html::parse(&text)
+		.map(|doc| is_challenge(&doc))
+		.unwrap_or(false)
+	{
+		bail!("[bakamh] Cloudflare still blocks the request");
+	}
+	Ok(text)
 }

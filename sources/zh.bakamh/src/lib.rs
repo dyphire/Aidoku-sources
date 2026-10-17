@@ -1,11 +1,12 @@
 #![no_std]
 
+mod auth;
 mod html;
 mod net;
 
 use aidoku::{
-	Chapter, DeepLinkHandler, DeepLinkResult, FilterValue, ImageRequestProvider, Listing,
-	ListingProvider, Manga, MangaPageResult, Page, Result, Source,
+	BasicLoginHandler, Chapter, DeepLinkHandler, DeepLinkResult, FilterValue, ImageRequestProvider,
+	Listing, ListingProvider, Manga, MangaPageResult, NotificationHandler, Page, Result, Source,
 	alloc::{String, Vec},
 	imports::net::Request,
 	prelude::*,
@@ -101,9 +102,25 @@ impl DeepLinkHandler for Bakamh {
 	}
 }
 
+impl BasicLoginHandler for Bakamh {
+	fn handle_basic_login(&self, _key: String, username: String, password: String) -> Result<bool> {
+		auth::login(&username, &password)
+	}
+}
+
+impl NotificationHandler for Bakamh {
+	fn handle_notification(&self, notification: String) {
+		if notification == "login" && !auth::is_logged_in() {
+			auth::logout();
+		}
+	}
+}
+
 register_source!(
 	Bakamh,
 	ListingProvider,
 	ImageRequestProvider,
-	DeepLinkHandler
+	DeepLinkHandler,
+	BasicLoginHandler,
+	NotificationHandler
 );
