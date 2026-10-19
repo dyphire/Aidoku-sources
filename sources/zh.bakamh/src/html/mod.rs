@@ -213,6 +213,8 @@ impl ChapterPage for Document {
 					.and_then(|el| el.text())
 					.and_then(|s| parse_chapter_date(s.trim()));
 				let chapter_number = (len - index) as f32;
+				// 🔒 badge: sign-in locked or early access chapters.
+				let locked = li.select_first(".mkjp-ea-badge").is_some();
 
 				Some(Chapter {
 					key,
@@ -220,6 +222,7 @@ impl ChapterPage for Document {
 					chapter_number: Some(chapter_number),
 					date_uploaded,
 					url: Some(chapter_url),
+					locked,
 					..Default::default()
 				})
 			})

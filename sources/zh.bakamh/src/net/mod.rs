@@ -3,7 +3,11 @@ use aidoku::{
 	FilterValue, Result,
 	alloc::{String, string::ToString as _},
 	helpers::uri::encode_uri,
-	imports::net::Request,
+	imports::{
+		html::{Document, Html},
+		net::Request,
+	},
+	prelude::*,
 };
 use core::fmt::{Display, Formatter, Result as FmtResult};
 
@@ -90,4 +94,21 @@ impl Display for Url {
 			}
 		}
 	}
+}
+
+fn is_challenge(html: &Document) -> bool {
+	html.select_first("#challenge-error-title, #challenge-error-text")
+		.is_some()
+}
+
+/// Fetches a page as raw text, erroring on a Cloudflare challenge without retrying.
+pub fn fetch_text(request: Request) -> Result<String> {
+	let text = request.send()?.get_string()?;
+	if Html::parse(&text)
+		.map(|doc| is_challenge(&doc))
+		.unwrap_or(false)
+	{
+		bail!("[bakamh] Cloudflare still blocks the request");
+	}
+	Ok(text)
 }
