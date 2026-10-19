@@ -237,16 +237,17 @@ pub fn get_page_list(chapter_key: &str) -> Result<Vec<Page>> {
 	let html = Request::get(url)?.html()?;
 
 	let pages = html
-		.select("img[id]")
+		.select(".reading-content img.wp-manga-chapter-img")
 		.map(|imgs| {
 			imgs.filter_map(|img| {
+				// The site lazy-loads the real address into `data-src`; older markup used
+				// `data-manga-src`, and `src` is empty for the reader images.
 				let src = img
-					.attr("data-manga-src")
+					.attr("data-src")
+					.or_else(|| img.attr("data-manga-src"))
 					.or_else(|| img.attr("src"))
-					.map(|s| s.trim().to_string())?;
-				if src.is_empty() {
-					return None;
-				}
+					.map(|s| s.trim().to_string())
+					.filter(|s| s.starts_with("http"))?;
 				Some(Page {
 					content: PageContent::url(src),
 					..Default::default()
@@ -258,3 +259,4 @@ pub fn get_page_list(chapter_key: &str) -> Result<Vec<Page>> {
 
 	Ok(pages)
 }
+
