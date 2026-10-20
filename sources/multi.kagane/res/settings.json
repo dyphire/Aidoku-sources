@@ -18,6 +18,26 @@
 				"values": ["Official", "Unofficial", "Mixed"],
 				"default": ["Official", "Unofficial", "Mixed"],
 				"refreshes": ["content"]
+			},
+			{
+				"type": "switch",
+				"key": "hideDisturbing",
+				"title": "Hide Disturbing Content",
+				"default": true,
+				"refreshes": ["content", "listings"]
+			}
+		]
+	},
+	{
+		"type": "group",
+		"title": "Titles",
+		"footer": "Names the upload source after each title, to tell apart editions of one series.",
+		"items": [
+			{
+				"type": "switch",
+				"key": "showSourceInTitle",
+				"title": "Show Source in Title",
+				"refreshes": ["content", "listings"]
 			}
 		]
 	}

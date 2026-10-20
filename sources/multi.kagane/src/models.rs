@@ -1,11 +1,14 @@
 use aidoku::{
 	Chapter, Manga, MangaWithChapter,
-	alloc::{format, string::String, vec::Vec},
+	alloc::{format, string::String, vec, vec::Vec},
 	imports::std::parse_date,
 };
 use serde::Deserialize;
+use serde_json::Value;
 
-use crate::{API_BASE, BASE_URL};
+use crate::helpers::{
+	api_base, base_url, parse_content_rating, parse_status, parse_viewer, source_title,
+};
 
 fn default_true() -> bool {
 	true
@@ -26,8 +29,24 @@ pub struct SearchItem {
 	pub series_id: String,
 	pub title: String,
 	pub cover_image_id: Option<String>,
+	pub source_id: Option<String>,
+	pub upload_status: Option<String>,
+	pub age_rating: Option<String>,
+	pub is_pornographic: Option<bool>,
+	pub format: Option<String>,
+	#[serde(default)]
+	pub genre_list: Vec<NamedItem>,
+	#[serde(default)]
+	pub tag_list: Vec<NamedItem>,
+	#[serde(default)]
+	pub staff_list: Vec<StaffMember>,
 	#[serde(default)]
 	pub latest_chapters: Vec<LatestChapter>,
+}
+
+#[derive(Deserialize)]
+pub struct NamedItem {
+	pub name: String,
 }
 
 #[derive(Deserialize)]
@@ -39,29 +58,59 @@ pub struct LatestChapter {
 	pub created_at: Option<String>,
 }
 
-impl From<SearchItem> for Manga {
-	fn from(s: SearchItem) -> Self {
-		let url = Some(format!("{BASE_URL}/series/{}", s.series_id));
+impl SearchItem {
+	/// `sources` is empty unless titles name their source.
+	pub fn into_manga(self, sources: &[UploadSource]) -> Manga {
 		Manga {
-			key: s.series_id,
-			title: String::from(s.title.trim()),
-			cover: s.cover_image_id.map(|id| format!("{API_BASE}/image/{id}")),
-			url,
+			title: source_title(&self.title, sources, self.source_id.as_deref()),
+			cover: self
+				.cover_image_id
+				.map(|id| format!("{}/image/{id}", api_base())),
+			url: Some(format!("{}/series/{}", base_url(), self.series_id)),
+			key: self.series_id,
 			..Default::default()
 		}
 	}
-}
 
-/// Pair a series with its most recent chapter, as returned in the search
-/// endpoint's `latest_chapters` field. Fails when the series has no chapters,
-/// so it can be dropped from home-feed listings via `filter_map(.. .ok())`.
-impl TryFrom<SearchItem> for MangaWithChapter {
-	type Error = ();
+	/// With the authors, status, rating and tags the big scroller shows.
+	pub fn into_full_manga(mut self, sources: &[UploadSource]) -> Manga {
+		let authors: Vec<String> = self
+			.staff_list
+			.drain(..)
+			.filter(|staff| {
+				let role = staff.role.to_lowercase();
+				role.contains("author") || role.contains("story")
+			})
+			.map(|staff| staff.name)
+			.collect();
+		let tags: Vec<String> = self
+			.genre_list
+			.drain(..)
+			.chain(self.tag_list.drain(..))
+			.map(|item| item.name)
+			.collect();
+		Manga {
+			authors: (!authors.is_empty()).then_some(authors),
+			status: self
+				.upload_status
+				.as_deref()
+				.map(parse_status)
+				.unwrap_or_default(),
+			content_rating: parse_content_rating(
+				self.age_rating.as_deref(),
+				self.is_pornographic,
+				None,
+			),
+			viewer: parse_viewer(self.format.as_deref()),
+			tags: (!tags.is_empty()).then_some(tags),
+			..self.into_manga(sources)
+		}
+	}
 
-	fn try_from(mut item: SearchItem) -> Result<Self, Self::Error> {
-		let book = item.latest_chapters.drain(..).next().ok_or(())?;
-		let manga = Manga::from(item);
-		Ok(MangaWithChapter {
+	/// The series with its newest chapter, or `None` when it has none yet.
+	pub fn into_manga_with_chapter(mut self, sources: &[UploadSource]) -> Option<MangaWithChapter> {
+		let book = self.latest_chapters.drain(..).next()?;
+		Some(MangaWithChapter {
 			chapter: Chapter {
 				key: book.book_id,
 				chapter_number: book.chapter_no.as_deref().and_then(|s| s.parse().ok()),
@@ -80,7 +129,7 @@ impl TryFrom<SearchItem> for MangaWithChapter {
 				}),
 				..Default::default()
 			},
-			manga,
+			manga: self.into_manga(sources),
 		})
 	}
 }
@@ -94,14 +143,15 @@ pub struct SeriesDetail {
 	pub upload_status: String,
 	pub format: Option<String>,
 	pub content_rating: Option<String>,
+	pub age_rating: Option<String>,
+	pub is_pornographic: Option<bool>,
+	pub source_id: Option<String>,
 	#[serde(default)]
 	pub series_staff: Vec<StaffMember>,
 	#[serde(default)]
 	pub genres: Vec<GenreItem>,
 	#[serde(default)]
 	pub tags: Vec<TagItem>,
-	#[serde(default)]
-	pub series_books: Vec<BookItem>,
 	#[serde(default)]
 	pub series_covers: Vec<CoverItem>,
 }
@@ -127,17 +177,6 @@ pub struct TagItem {
 }
 
 #[derive(Deserialize)]
-pub struct BookItem {
-	pub book_id: String,
-	pub title: String,
-	pub created_at: Option<String>,
-	pub chapter_no: Option<String>,
-	pub volume_no: Option<String>,
-	#[serde(default)]
-	pub groups: Vec<GroupItem>,
-}
-
-#[derive(Deserialize)]
 pub struct GroupItem {
 	pub title: String,
 }
@@ -145,6 +184,118 @@ pub struct GroupItem {
 #[derive(Deserialize)]
 pub struct CoverItem {
 	pub image_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct SourceList {
+	#[serde(default)]
+	pub sources: Vec<UploadSource>,
+}
+
+#[derive(Deserialize)]
+pub struct TagEntry {
+	pub id: String,
+	pub tag_name: String,
+}
+
+#[derive(Deserialize)]
+pub struct StaffResults {
+	#[serde(default)]
+	pub content: Vec<StaffResult>,
+}
+
+#[derive(Deserialize)]
+pub struct StaffResult {
+	pub staff_id: String,
+	pub name: String,
+}
+
+#[derive(Deserialize)]
+pub struct GroupResults {
+	#[serde(default)]
+	pub items: Vec<GroupResult>,
+}
+
+#[derive(Deserialize)]
+pub struct GroupResult {
+	pub group_id: String,
+	pub title: String,
+}
+
+#[derive(Deserialize)]
+pub struct UploadSource {
+	pub source_id: String,
+	pub title: String,
+	pub source_type: Option<String>,
+}
+
+/// The chapter list: each book is a row of values in the order `fields` names, and its
+/// groups are positions in `groups`.
+#[derive(Deserialize)]
+pub struct BookIndex {
+	pub fields: Vec<String>,
+	#[serde(default)]
+	pub groups: Vec<GroupItem>,
+	#[serde(default)]
+	pub books: Vec<Vec<Value>>,
+}
+
+fn cell(row: &[Value], at: Option<usize>) -> Option<&Value> {
+	row.get(at?)
+}
+
+impl BookIndex {
+	/// Newest first by `sort_no`, the site's reading order, since chapter numbers can restart.
+	/// `scanlator` names the series' source, which credits a chapter better than its groups.
+	pub fn into_chapters(self, series_key: &str, scanlator: Option<&str>) -> Vec<Chapter> {
+		let column = |name: &str| self.fields.iter().position(|field| field == name);
+		let [id, title, sort, chapter, volume, released, group_ix] = [
+			"book_id",
+			"title",
+			"sort_no",
+			"chapter_no",
+			"volume_no",
+			"released_at",
+			"group_ix",
+		]
+		.map(column);
+
+		let mut books: Vec<(f64, Chapter)> = self
+			.books
+			.iter()
+			.filter_map(|row| {
+				let text = |at| cell(row, at).and_then(Value::as_str);
+				let key = text(id)?;
+				let scanlators: Vec<String> = match scanlator {
+					Some(scanlator) => vec![scanlator.into()],
+					None => cell(row, group_ix)
+						.and_then(Value::as_array)
+						.into_iter()
+						.flatten()
+						.filter_map(|at| self.groups.get(at.as_u64()? as usize))
+						.map(|group| group.title.clone())
+						.collect(),
+				};
+				let chapter = Chapter {
+					key: key.into(),
+					title: text(title)
+						.map(str::trim)
+						.filter(|title| !title.is_empty())
+						.map(String::from),
+					chapter_number: text(chapter).and_then(|number| number.parse().ok()),
+					volume_number: text(volume).and_then(|number| number.parse().ok()),
+					date_uploaded: cell(row, released).and_then(Value::as_i64),
+					scanlators: (!scanlators.is_empty()).then_some(scanlators),
+					url: Some(format!("{}/series/{series_key}/reader/{key}", base_url())),
+					..Default::default()
+				};
+				let order = cell(row, sort).and_then(Value::as_f64).unwrap_or_default();
+				Some((order, chapter))
+			})
+			.collect();
+		books.sort_by(|a, b| b.0.total_cmp(&a.0));
+		books.into_iter().map(|(_, chapter)| chapter).collect()
+	}
 }
 
 // ── Page listing (DRM) ──────────────────────────────────────────────────────
