@@ -36,6 +36,13 @@ impl Url<'_> {
 			 AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15",
 		);
 
+		// The API endpoints content-negotiate (Django REST framework): without an
+		// explicit `Accept` header, hosts that inject a browser header suite get
+		// the browsable-API HTML page instead of the JSON envelope.
+		if self.is_search() || self.is_chapter_list() {
+			request.set_header("Accept", "application/json");
+		}
+
 		if self.is_chapter_list() {
 			request.set_header("dnts", "1");
 		}

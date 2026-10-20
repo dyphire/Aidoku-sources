@@ -112,6 +112,7 @@ pub fn login(username: &str, password: &str) -> Result<()> {
 			"application/x-www-form-urlencoded;charset=UTF-8",
 		)
 		.header("X-Requested-With", "XMLHttpRequest")
+		.header("Accept", "application/json")
 		.body(body)
 		.send()?;
 
