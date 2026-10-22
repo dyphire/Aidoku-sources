@@ -1,5 +1,5 @@
 use crate::auth::{AuthedRequest, require_login};
-use crate::helpers::{apply_headers, get_base_url};
+use crate::helpers::{apply_api_headers, apply_headers, get_base_url};
 use crate::keys::{ranobe_key, ranobe_slug};
 use crate::models::{DesuChapter, DesuChaptersResponse};
 use crate::settings::{eng_title, path_on_site, ranobe_cover_preview, rewrite_media_url};
@@ -229,7 +229,7 @@ fn chapter_id_from_api_view_url(
 
 fn fetch_ranobe_chapter_records(book_id: &str) -> Result<Vec<DesuChapter>> {
 	let url = format!("{}/api/ranobe/{book_id}/chapters", get_base_url());
-	let response = apply_headers(Request::get(url)?).send()?;
+	let response = apply_api_headers(Request::get(url)?).send()?;
 	if response.status_code() >= 400 {
 		bail!(
 			"HTTP {} while fetching Ranobe chapter list",
@@ -570,7 +570,7 @@ pub fn fetch_ranobe_chapter_pages(slug: &str, chapter: &Chapter) -> Result<Vec<P
 	let base = get_base_url();
 	let title_url = format!("{base}/ranobe/{slug}/");
 	let referer = chapter.url.as_deref().unwrap_or(title_url.as_str());
-	let response = apply_headers(Request::get(url)?)
+	let response = apply_api_headers(Request::get(url)?)
 		.header("Referer", referer)
 		.send()?;
 	if response.status_code() == 401 {

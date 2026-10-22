@@ -40,11 +40,17 @@ impl Url<'_> {
 
 	pub fn request(&self) -> Result<Request> {
 		let url = self.to_string()?;
-		let request = Request::get(url)?.header(
+		let mut request = Request::get(url)?.header(
 			"User-Agent",
 			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
 			 AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0.1 Safari/605.1.15",
 		);
+		// The API endpoints content-negotiate (Django REST framework): without an
+		// explicit `Accept` header, hosts that inject a browser header suite get
+		// the browsable-API HTML page instead of the JSON envelope.
+		if self.is_search() || self.is_chapter_list() {
+			request.set_header("Accept", "application/json");
+		}
 		Ok(request)
 	}
 

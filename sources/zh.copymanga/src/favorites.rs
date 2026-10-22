@@ -77,9 +77,15 @@ fn to_manga(comic: CollectComic) -> Manga {
 fn fetch_collect_page(page: i32) -> Result<MangaPageResult> {
 	let url = collect_page_url(&base_url()?, page);
 
-	let mut response = Request::get(&url)?.authed()?.send()?;
+	let mut response = Request::get(&url)?
+		.authed()?
+		.header("Accept", "application/json")
+		.send()?;
 	if response.status_code() == 401 && try_relogin() {
-		response = Request::get(&url)?.authed()?.send()?;
+		response = Request::get(&url)?
+			.authed()?
+			.header("Accept", "application/json")
+			.send()?;
 	}
 	if response.status_code() == 401 {
 		bail!("登入已失效，請重新在設定中登入");
@@ -429,6 +435,7 @@ fn set_collect_once(url: &str, body: &str) -> CollectWriteAttempt {
 				"application/x-www-form-urlencoded;charset=UTF-8",
 			)
 			.header("X-Requested-With", "XMLHttpRequest")
+			.header("Accept", "application/json")
 			.header("Cookie", &format!("token={token}"))
 			.header("Authorization", &format!("Token {token}"))
 			.body(body)
