@@ -134,9 +134,9 @@ impl MangaPage for Document {
 				.unwrap_or_default(),
 		);
 		let tags = self
-			.try_select(".tag-small-group>.tag-small>a")?
-			.filter_map(|a| a.text())
-			.collect::<Vec<String>>();
+			.select(".tag-small-group a")
+			.map(|els| els.filter_map(|a| a.text()).collect::<Vec<String>>())
+			.unwrap_or_default();
 		manga.tags = Some(tags);
 		manga.status = {
 			// Status lives in `.book-meta em` (e.g. "連載中"/"已完結"), joined by
