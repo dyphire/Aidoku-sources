@@ -125,10 +125,14 @@ impl MangaPage for Document {
 				.text()
 				.unwrap_or_default(),
 		);
+		// The site dropped the intermediate `span.tag-small` wrapper: the anchors
+		// are now direct children of `.tag-small-group` and carry `.tag-small`
+		// themselves. Use a descendant anchor selector so both the old and the
+		// new markup resolve to the individual tag links (never their container).
 		let tags = self
-			.try_select(".tag-small-group>.tag-small>a")?
-			.filter_map(|a| a.text())
-			.collect::<Vec<String>>();
+			.select(".tag-small-group a")
+			.map(|els| els.filter_map(|a| a.text()).collect::<Vec<String>>())
+			.unwrap_or_default();
 		manga.tags = Some(tags);
 		manga.status = {
 			// Status lives in `.book-meta em` (e.g. "連載中"/"已完結"), joined by
