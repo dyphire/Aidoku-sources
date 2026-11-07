@@ -1,0 +1,20 @@
+{
+	"info": {
+		"id": "zh.quanben",
+		"name": "全本小说网",
+		"version": 1,
+		"url": "https://quanben5.com",
+		"urls": [
+			"https://quanben5.com",
+			"https://quanben5.io",
+			"https://big5.quanben5.com"
+		],
+		"contentRating": 1,
+		"languages": ["zh"],
+		"minAppVersion": "0.8.3"
+	},
+	"config": {
+		"hidesFiltersWhileSearching": true
+	},
+	"listings": []
+}
